@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import logging
 
 from data import fetch_all_products_with_sales
-from sheets import push_to_google_sheets
+from sheets import push_to_google_sheets, fetch_from_google_sheets
 
 # Konfigurera loggning (kan flyttas till en separat fil om önskas)
 logging.basicConfig(
@@ -285,6 +285,79 @@ def main():
                     st.success(f"✅ Data har pushats till Google Sheets! [Öppna Sheet]({sheet_url})")
                 else:
                     st.error("❌ Misslyckades med att pusha data till Google Sheets.")
+
+    st.markdown("---")
+    st.subheader("📥 Importera beställningar via CSV")
+
+    uploaded_file = st.file_uploader("Ladda upp CSV-fil med beställningar", type=['csv'])
+
+    if 'active_orders' not in st.session_state:
+        st.session_state.active_orders = pd.DataFrame(columns=['OrderDate', 'ProductID', 'Size', 'Quantity ordered'])
+
+    if uploaded_file is not None:
+        try:
+            with st.spinner('Importerar beställningar...'):
+                # Läs CSV-filen och visa debug-information
+                imported_df = pd.read_csv(uploaded_file)
+                st.write("Debug - Importerad data:", imported_df[['ProductID', 'Size', 'Quantity ordered']])
+                
+                # Kontrollera att nödvändiga kolumner finns
+                required_columns = ['ProductID', 'Size', 'Quantity ordered']
+                if all(col in imported_df.columns for col in required_columns):
+                    # Konvertera Quantity ordered till numeriskt värde
+                    imported_df['Quantity ordered'] = pd.to_numeric(imported_df['Quantity ordered'], errors='coerce')
+                    imported_df['ProductID'] = imported_df['ProductID'].astype(str)
+                    
+                    # Filtrera bort rader där Quantity ordered är tom eller 0
+                    valid_orders = imported_df[imported_df['Quantity ordered'] > 0][required_columns]
+                    st.write("Debug - Giltiga ordrar:", valid_orders)
+                    
+                    if not valid_orders.empty:
+                        # Lägg till orderdatum
+                        valid_orders['OrderDate'] = pd.Timestamp.now().strftime('%Y-%m-%d')
+                        
+                        # Lägg till i aktiva ordrar
+                        st.session_state.active_orders = pd.concat([st.session_state.active_orders, valid_orders])
+                        st.write("Debug - Aktiva ordrar:", st.session_state.active_orders)
+                        
+                        # Uppdatera den befintliga DataFrame i session state
+                        if 'merged_df' in st.session_state:
+                            merged_df = st.session_state['merged_df'].copy()
+                            
+                            # Debug - visa matchningsvillkor
+                            for _, row in valid_orders.iterrows():
+                                st.write(f"Debug - Söker match för ProductID: {row['ProductID']}, Size: {row['Size']}")
+                                mask = (
+                                    (merged_df['ProductID'].astype(str) == str(row['ProductID'])) & 
+                                    (merged_df['Size'].astype(str) == str(row['Size']))
+                                )
+                                st.write(f"Debug - Antal matchande rader: {mask.sum()}")
+                                
+                                if any(mask):
+                                    current_stock = merged_df.loc[mask, 'Stock Balance'].iloc[0]
+                                    new_stock = current_stock + row['Quantity ordered']
+                                    st.write(f"Debug - Uppdaterar Stock Balance från {current_stock} till {new_stock}")
+                                    
+                                    merged_df.loc[mask, 'Stock Balance'] = new_stock
+                            
+                            # Spara uppdaterad DataFrame
+                            st.session_state['merged_df'] = merged_df
+                            st.success(f"✅ {len(valid_orders)} beställningar har importerats och lagersaldo har uppdaterats!")
+                            
+                            # Visa uppdaterad data
+                            st.dataframe(merged_df)
+                    else:
+                        st.warning("⚠️ Inga giltiga beställningar hittades i CSV-filen.")
+                else:
+                    st.error(f"❌ CSV-filen måste innehålla kolumnerna: {', '.join(required_columns)}")
+                    
+        except Exception as e:
+            st.error(f"❌ Ett fel uppstod vid import: {str(e)}")
+
+    # Visa aktiva ordrar
+    if not st.session_state.active_orders.empty:
+        st.write("Aktiva ordrar:")
+        st.dataframe(st.session_state.active_orders)
 
     # Optional: Lägg till en enkel footer
     st.markdown("""

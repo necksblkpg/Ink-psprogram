@@ -116,3 +116,32 @@ def push_to_google_sheets(df, sheet_name):
         logger.error(f"Error pushing data to Google Sheets: {str(e)}")
         st.error(f"❌ Misslyckades med att pusha data till Google Sheets: {str(e)}")
         return None
+
+
+def fetch_from_google_sheets(sheet_url):
+    """
+    Hämtar data från ett specifikt Google Sheet
+    """
+    try:
+        client = authenticate_google_sheets()
+        if client is None:
+            st.error("❌ Kunde inte autentisera mot Google Sheets")
+            return None
+            
+        # Extrahera sheet ID från URL
+        sheet_id = sheet_url.split('/')[5]
+        sheet = client.open_by_key(sheet_id)
+        worksheet = sheet.get_worksheet(0)
+        
+        # Hämta all data som en lista av listor
+        records = worksheet.get_all_records()
+        
+        # Konvertera till DataFrame
+        df = pd.DataFrame(records)
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Fel vid hämtning från Google Sheets: {str(e)}")
+        st.error(f"❌ Fel vid hämtning från Google Sheets: {str(e)}")
+        return None
