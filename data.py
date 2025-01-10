@@ -232,6 +232,84 @@ def fetch_all_suppliers_and_variants(api_endpoint, headers, products_limit=100):
 
 
 @st.cache_data(show_spinner=False)
+def fetch_all_product_costs(api_endpoint, headers, limit=100):
+    """
+    Hämtar inköpspris (unitCost) för samtliga produkter (paginering),
+    och returnerar en dict med key=produkt_id, value=inköpspris.
+    Här antas att alla varianter av en produkt har samma pris,
+    så vi tar första variantens 'unitCost' som "Inköpspris".
+    """
+    cost_dict = {}
+    page = 1
+
+    cost_query = '''
+    query AllProductCosts($limit: Int!, $page: Int!) {
+        products(limit: $limit, page: $page) {
+            id
+            productNumber
+            variants {
+                unitCost {
+                    value
+                }
+            }
+        }
+    }
+    '''
+
+    while True:
+        variables = {
+            "limit": limit,
+            "page": page
+        }
+
+        try:
+            response = requests.post(api_endpoint,
+                                     json={
+                                         "query": cost_query,
+                                         "variables": variables
+                                     },
+                                     headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            if "errors" in data:
+                raise Exception(
+                    f"GraphQL query error: {json.dumps(data['errors'], indent=2)}"
+                )
+
+            products = data['data']['products']
+            if not products:
+                break
+
+            for p in products:
+                product_id = str(p['id']).strip().upper()
+                variants = p.get('variants', [])
+                if variants and 'unitCost' in variants[0] and variants[0]['unitCost']:
+                    cost_value = variants[0]['unitCost'].get('value', 0)
+                else:
+                    cost_value = 0
+
+                # Spara i dict
+                cost_dict[product_id] = cost_value
+
+            if len(products) < limit:
+                break
+
+            page += 1
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request error while fetching product costs: {str(e)}")
+            st.error(f"❌ Request error while fetching product costs: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Error processing product cost data: {str(e)}")
+            st.error(f"❌ Error processing product cost data: {str(e)}")
+            return None
+
+    return cost_dict
+
+
+@st.cache_data(show_spinner=False)
 def fetch_all_products(api_endpoint, api_token, limit=200):
     all_product_data = []
 
@@ -240,12 +318,14 @@ def fetch_all_products(api_endpoint, api_token, limit=200):
         "Authorization": f"Bearer {api_token}"
     }
 
+    # Hämta data om leverantörer och varianter
     suppliers_data = fetch_all_suppliers_and_variants(api_endpoint,
                                                       headers,
                                                       products_limit=100)
     if suppliers_data is None:
         return None
 
+    # Hämta lagerbalance (stock) via GraphQL
     product_query_template = '''
     query ProductStocks($limit: Int!, $page: Int!) {
         warehouses {
@@ -340,6 +420,12 @@ def fetch_all_products(api_endpoint, api_token, limit=200):
             st.error(f"❌ Error processing product stock data: {str(e)}")
             return None
 
+    # Hämta inköpspris
+    cost_dict = fetch_all_product_costs(api_endpoint, headers, limit=100)
+    if cost_dict is None:
+        # Om vi inte kunde hämta kostnader, sätt 0
+        cost_dict = {}
+
     # Konvertera suppliers_data till DataFrame
     all_product_data = list(suppliers_data.values())
     if not all_product_data:
@@ -348,6 +434,9 @@ def fetch_all_products(api_endpoint, api_token, limit=200):
         return pd.DataFrame()
 
     df = pd.DataFrame(all_product_data)
+
+    # Lägg till kolumnen "Inköpspris" baserat på product_id
+    df["Inköpspris"] = df["ProductID"].apply(lambda pid: cost_dict.get(pid, 0.0))
 
     # Säkerställ att 'Stock Balance' är av heltalstyp
     df['Stock Balance'] = pd.to_numeric(df['Stock Balance'], errors='coerce').fillna(0).astype(int)

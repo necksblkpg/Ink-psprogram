@@ -155,6 +155,7 @@ def main():
                     "Status",
                     "Is Bundle",
                     "Supplier",
+                    "Inköpspris",        # <-- Ny kolumn
                     "Quantity Sold",
                     "Stock Balance",
                     "Avg Daily Sales",
@@ -162,7 +163,7 @@ def main():
                     "Reorder Level",
                     "Quantity to Order",
                     "Need to Order",
-                    "Quantity ordered",  # lägg till nya kolumnen sist
+                    "Quantity ordered",  
                 ]
 
                 # Reordna kolumnerna om de finns
@@ -211,6 +212,11 @@ def main():
                             "Supplier",
                             help="Leverantör",
                             width="medium"
+                        ),
+                        "Inköpspris": st.column_config.NumberColumn(
+                            "Inköpspris",
+                            help="Inköpspris per enhet",
+                            format="%.2f"
                         ),
                         "Quantity Sold": st.column_config.NumberColumn(
                             "Quantity Sold",

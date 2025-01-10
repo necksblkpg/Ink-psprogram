@@ -79,6 +79,7 @@ def push_to_google_sheets(df, sheet_name):
             "Status",
             "Is Bundle",
             "Supplier",
+            "Inköpspris",      # <-- Se till att även ha med denna
             "Quantity Sold",
             "Stock Balance",
             "Avg Daily Sales",
@@ -86,7 +87,7 @@ def push_to_google_sheets(df, sheet_name):
             "Reorder Level",
             "Quantity to Order",
             "Need to Order",
-            "Quantity ordered"  # Lägg även till här
+            "Quantity ordered"  
         ]
 
         # Reordna kolumnerna och behåll bara de som finns
